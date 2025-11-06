@@ -1,13 +1,57 @@
-# Python
+# -----------------
+# Entornos Virtuales
+# -----------------
+# Ignorar la carpeta del entorno virtual
+venv/
+.venv/
+env/
+
+# -----------------
+# Python & Caché
+# -----------------
+# Ignorar archivos de caché de Python
 __pycache__/
 *.pyc
-.DS_Store
-*.env
+*.pyo
+*.pyd
 
-# Datos generados
-data/accidentes_*.csv
+# Archivos de distribución de Python
+.Python
+build/
+dist/
+*.egg-info
+develop-eggs/
+
+# -----------------
+# Secretos (¡MUY IMPORTANTE!)
+# -----------------
+# Ignorar archivos .env que contienen claves de API
+.env
+.env.*
+
+# -----------------
+# Datos GENERADOS
+# -----------------
+# Ignorar los CSVs que son creados por tus scripts
+data/accidentes_concepcion.csv
 data/concepcion_vial.csv
 
-# Artefactos y Modelos
+# -----------------
+# Modelos de ML (Artefactos)
+# -----------------
+# Ignorar la carpeta de artefactos y los modelos entrenados
 artifacts/
 *.joblib
+*.pkl
+
+# -----------------
+# Archivos de IDE y OS
+# -----------------
+# VS Code
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Windows
+Thumbs.db
