@@ -1,0 +1,23 @@
+# requirements.txt
+
+# Data, ML y Grafos
+pandas
+scikit-learn
+lightgbm
+joblib
+numpy
+networkx
+
+# API (Backend)
+fastapi
+uvicorn[standard]
+
+# App (Frontend)
+streamlit
+requests
+
+# RAG (Buscador)
+rank_bm25
+
+# --- AÑADIR ESTA LÍNEA ---
+openai
