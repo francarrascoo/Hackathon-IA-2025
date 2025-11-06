@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.DS_Store
+*.env
+
+# Datos generados
+data/accidentes_*.csv
+data/concepcion_vial.csv
+
+# Artefactos y Modelos
+artifacts/
+*.joblib
