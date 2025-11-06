@@ -1,3 +1,4 @@
+# app/app.py
 import streamlit as st
 import requests
 import pandas as pd
@@ -48,17 +49,18 @@ st.sidebar.markdown("Dada una ubicación específica (Ciudad, comuna)...")
 comuna_seleccionada = st.sidebar.selectbox(
     "Selecciona una Comuna",
     options=comunas_list,
+    # Buscar CONCEPCION o la primera comuna de la lista
     index=comunas_list.index("CONCEPCION") if "CONCEPCION" in comunas_list else 0
 )
 
 # 2. SELECCIÓN DE FECHA
-default_time = datetime(2025, 11, 6, 18, 0) # Hora del Hackathon
+default_time = datetime(2025, 11, 6, 18, 0) # Fecha de la Hackathon
 time_input = st.sidebar.time_input("Hora de Análisis", value=default_time.time())
 date_input = st.sidebar.date_input("Fecha de Análisis", value=default_time.date())
 timestamp = f"{date_input}T{time_input}"
 
 st.sidebar.info(f"Analizando: {comuna_seleccionada} @ {timestamp}")
-st.sidebar.markdown(DISCLAIMER_TEXT, unsafe_allow_html=True) # Disclaimer visible
+st.sidebar.markdown(DISCLAIMER_TEXT, unsafe_allow_html=True)
 
 # --- Layout Principal ---
 
@@ -85,15 +87,16 @@ if st.sidebar.button("Analizar Comuna", type="primary"):
 # --- Mostrar resultados del análisis (si existen) ---
 if st.session_state.analysis_results:
     results = st.session_state.analysis_results
+    
     st.header(f"1. Estimación de Riesgo ({st.session_state.last_comuna})")
-    st.markdown("Identificación de puntos comunes de accidentes (Top 10 Calles):")
+    st.markdown("Identificación de puntos comunes de accidentes (Top 10 Calles, datos 2024):")
     
     if "estimacion_riesgo" in results:
         df_hotspots = pd.DataFrame(results['estimacion_riesgo'])
         st.dataframe(df_hotspots, use_container_width=True)
     
-    st.header("2. Explicabilidad")
-    st.markdown("Búsqueda de patrones en los datos de accidentes reales:")
+    st.header("2. Explicabilidad (Patrones 2024)")
+    st.markdown("Búsqueda de patrones en los datos de accidentes reales de la comuna:")
     
     if "explicabilidad" in results:
         exp = results['explicabilidad']
@@ -110,8 +113,8 @@ if st.session_state.analysis_results:
     
     st.divider()
 
-    st.header("3. Plan de Acción (Coach RAG)")
-    st.markdown(f"Genera un plan de acción basado en los hallazgos para **{st.session_state.last_comuna}**.")
+    st.header("3. Plan de Acción (Coach RAG + LLM)")
+    st.markdown(f"Genera un plan de acción vía LLM basado en los hallazgos para **{st.session_state.last_comuna}**.")
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -131,7 +134,7 @@ if st.session_state.analysis_results:
         }
         
         try:
-            with st.spinner("El coach RAG está generando un plan..."):
+            with st.spinner("El coach RAG (OpenAI) está generando un plan..."):
                 rag_response = requests.post(f"{API_URL}/coach", json=rag_payload)
                 rag_response.raise_for_status()
                 response_data = rag_response.json()

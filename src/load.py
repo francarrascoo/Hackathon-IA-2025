@@ -1,27 +1,36 @@
+# src/load.py
 import pandas as pd
 import os
 
-# Constante para todo el proyecto
-CODIGO_COMUNA_CONCEPCION = 8101
-VIAL_FILE = "data/concepcion_vial.csv"
-ACCIDENTES_FILE = "data/accidentes_concepcion.csv"
+# --- NOMBRES DE ARCHIVOS PROCESADOS (V15) ---
+# Archivos creados por src/targets.py y usados por src/model.py
+PROCESSED_TRAIN_FILE = "data/train_dataset_full.csv"
+PROCESSED_TEST_FILE = "data/test_dataset_full.csv"
 
-def load_data():
+# Archivos de "producción" usados por api/main.py y src/rag.py
+# (El vial procesado de toda la región)
+VIAL_FILE = "data/biobio_vial_procesado.csv"
+# (El RAG usa todos los años, pero la API usa el más reciente para el dashboard)
+SINIESTROS_2024_FILE = "data/Siniestros_2024.csv"
+
+def load_train_test_data():
     """
-    Carga la red vial y los accidentes de Concepción.
-    Asume que los archivos fueron creados por 'src/targets.py'
+    Carga los datasets de ENTRENAMIENTO (2021-23) y PRUEBA (2024)
+    pre-procesados por src/targets.py.
     """
-    print("src.load: Cargando datos de Concepción...")
-    if not os.path.exists(VIAL_FILE) or not os.path.exists(ACCIDENTES_FILE):
-        print(f"Error: Archivos no encontrados.")
-        print("Por favor, ejecuta 'python src/model.py' primero para simular datos y entrenar.")
+    print(f"src.load: Cargando datos procesados de train/test...")
+    
+    if not os.path.exists(PROCESSED_TRAIN_FILE) or not os.path.exists(PROCESSED_TEST_FILE):
+        print(f"Error: Archivos procesados '{PROCESSED_TRAIN_FILE}' o '{PROCESSED_TEST_FILE}' no encontrados.")
+        print("Por favor, ejecuta 'python -m src.model' primero para generar estos archivos.")
         return None, None
     
     try:
-        df_vial = pd.read_csv(VIAL_FILE)
-        df_accidentes = pd.read_csv(ACCIDENTES_FILE)
-        print(f"src.load: Datos cargados: {len(df_vial)} segmentos viales, {len(df_accidentes)} accidentes.")
-        return df_vial, df_accidentes
+        df_train = pd.read_csv(PROCESSED_TRAIN_FILE)
+        df_test = pd.read_csv(PROCESSED_TEST_FILE)
+        print(f"src.load: Datos cargados: {len(df_train)} muestras de entreno, {len(df_test)} muestras de prueba.")
+        return df_train, df_test
+    
     except Exception as e:
-        print(f"Error al cargar archivos: {e}")
+        print(f"Error al cargar archivos procesados: {e}")
         return None, None
