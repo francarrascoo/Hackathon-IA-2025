@@ -11,25 +11,44 @@ from src.prompts import DISCLAIMER_TEXT
 # URL de la API (debe estar corriendo localmente)
 API_URL = "http://127.0.0.1:8000"
 
-st.set_page_config(layout="wide", page_title="Dashboard de Riesgo (Concepción)")
-st.title("🛰️ Dashboard de Riesgo Vial - Hackathon Duoc UC 2025")
+st.set_page_config(layout="wide", page_title="Dashboard de Riesgo (Biobío)")
+st.title("🛰️ Dashboard de Riesgo Vial (Región del Biobío) - Duoc UC 2025")
 st.caption("App demo implementada en Streamlit" )
+
+# --- Funciones de carga de datos ---
+@st.cache_data # Cachear la lista de comunas
+def load_comunas(api_url):
+    """Llama al nuevo endpoint /comunas de la API."""
+    try:
+        response = requests.get(f"{api_url}/comunas")
+        response.raise_for_status()
+        data = response.json()
+        return data.get("comunas", ["Error: No se pudieron cargar las comunas"])
+    except Exception as e:
+        print(f"Error al cargar comunas: {e}")
+        st.sidebar.error(f"Error al conectar con la API: {e}")
+        return []
+
+# Cargar la lista de comunas al iniciar la app
+comunas_list = load_comunas(API_URL)
 
 # --- Inicializar estado de sesión ---
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
+if 'last_comuna' not in st.session_state:
+    st.session_state.last_comuna = ""
 
 # --- Sidebar (Configuración) ---
 st.sidebar.header("Configuración de Análisis")
 
-# 1. SELECCIÓN DE CIUDAD
-# (Hardcodeado a Concepción, ya que nuestros datos son de ahí)
-ciudad_seleccionada = st.sidebar.selectbox(
-    "Selecciona una Ciudad",
-    options=["Concepción / San Pedro de la Paz"],
-    index=0
+# 1. SELECCIÓN DE CIUDAD (¡AHORA DINÁMICO!)
+st.sidebar.markdown("Dada una ubicación específica (Ciudad, comuna)...")
+comuna_seleccionada = st.sidebar.selectbox(
+    "Selecciona una Comuna",
+    options=comunas_list,
+    index=comunas_list.index("CONCEPCION") if "CONCEPCION" in comunas_list else 0
 )
 
 # 2. SELECCIÓN DE FECHA
@@ -38,23 +57,24 @@ time_input = st.sidebar.time_input("Hora de Análisis", value=default_time.time(
 date_input = st.sidebar.date_input("Fecha de Análisis", value=default_time.date())
 timestamp = f"{date_input}T{time_input}"
 
-st.sidebar.info(f"Analizando: {ciudad_seleccionada} @ {timestamp}")
+st.sidebar.info(f"Analizando: {comuna_seleccionada} @ {timestamp}")
 st.sidebar.markdown(DISCLAIMER_TEXT, unsafe_allow_html=True) # Disclaimer visible
 
 # --- Layout Principal ---
 
 # Botón para ejecutar el análisis
-if st.sidebar.button("Analizar Ciudad", type="primary"):
+if st.sidebar.button("Analizar Comuna", type="primary"):
     payload = {
-        "ciudad": ciudad_seleccionada,
+        "comuna_seleccionada": comuna_seleccionada,
         "timestamp": timestamp
     }
     try:
-        with st.spinner(f"Analizando {ciudad_seleccionada}... (Llamando a API: /predict)"):
+        with st.spinner(f"Analizando {comuna_seleccionada}... (Llamando a API: /predict)"):
             response = requests.post(f"{API_URL}/predict", json=payload)
             response.raise_for_status()
         
         st.session_state.analysis_results = response.json()
+        st.session_state.last_comuna = comuna_seleccionada # Guardar la comuna analizada
         st.session_state.messages = [] # Limpiar chat
 
     except requests.exceptions.RequestException as e:
@@ -65,24 +85,18 @@ if st.sidebar.button("Analizar Ciudad", type="primary"):
 # --- Mostrar resultados del análisis (si existen) ---
 if st.session_state.analysis_results:
     results = st.session_state.analysis_results
-    
-    # Dividir la página en 3 secciones, como pediste
-    
-    # --- 1. ESTIMACIÓN DE RIESGO ---
-    st.header("1. Estimación de Riesgo")
+    st.header(f"1. Estimación de Riesgo ({st.session_state.last_comuna})")
     st.markdown("Identificación de puntos comunes de accidentes (Top 10 Calles):")
     
     if "estimacion_riesgo" in results:
         df_hotspots = pd.DataFrame(results['estimacion_riesgo'])
         st.dataframe(df_hotspots, use_container_width=True)
     
-    # --- 2. EXPLICABILIDAD ---
     st.header("2. Explicabilidad")
     st.markdown("Búsqueda de patrones en los datos de accidentes reales:")
     
     if "explicabilidad" in results:
         exp = results['explicabilidad']
-        
         col1, col2, col3 = st.columns(3)
         with col1:
             st.subheader("Causas Principales")
@@ -96,35 +110,30 @@ if st.session_state.analysis_results:
     
     st.divider()
 
-    # --- 3. PLAN DE ACCIÓN (RAG) ---
     st.header("3. Plan de Acción (Coach RAG)")
-    st.markdown("Genera un plan de acción basado en los hallazgos. (Llama a API: /coach)")
+    st.markdown(f"Genera un plan de acción basado en los hallazgos para **{st.session_state.last_comuna}**.")
 
-    # Mostrar historial del chat
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Input del chat
-    if prompt := st.chat_input("¿Qué plan de acción sugieres basado en estos patrones?"):
+    if prompt := st.chat_input("¿Qué plan de acción sugieres?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Preparar payload para el RAG
-        # (Pasamos los drivers (hotspots) al RAG como contexto)
         rag_payload = {
             "query": prompt,
             "contexto_ciudad": {
                 "drivers": results.get("drivers", [])
-            }
+            },
+            "comuna_seleccionada": st.session_state.last_comuna
         }
         
         try:
             with st.spinner("El coach RAG está generando un plan..."):
                 rag_response = requests.post(f"{API_URL}/coach", json=rag_payload)
                 rag_response.raise_for_status()
-                
                 response_data = rag_response.json()
                 bot_response = response_data.get("plan_textual", "No pude procesar la respuesta.")
             
@@ -136,4 +145,4 @@ if st.session_state.analysis_results:
             st.error(f"Error al contactar la API del Coach: {e}")
 
 else:
-    st.info("Haz clic en **Analizar Ciudad** en la barra lateral para comenzar.")
+    st.info("Selecciona una comuna y haz clic en **Analizar Comuna** en la barra lateral para comenzar.")

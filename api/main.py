@@ -17,58 +17,81 @@ from src.load import VIAL_FILE, ACCIDENTES_FILE
 from src.rag import get_rag_response
 from src.prompts import DISCLAIMER_TEXT
 
-print("api.main (V13): Iniciando API de Dashboard de Riesgo (Con RAG V13)...")
+print("api.main (V14): Iniciando API de Dashboard de Riesgo (Dinámico por Comuna)...")
 
 # --- Carga de Artefactos ---
 try:
     PIPELINE = joblib.load("artifacts/concepcion_risk_model.joblib")
-    print("api.main: Modelo de ML cargado.")
+    print("api.main: Modelo de ML (entrenado en CCP/SPP) cargado.")
 except FileNotFoundError:
     print("Error Crítico: 'artifacts/concepcion_risk_model.joblib' no encontrado.")
     sys.exit(1)
 
+# --- Carga de Datos Completa (Toda la Región) ---
 try:
-    DF_VIAL = pd.read_csv(VIAL_FILE)
-    DF_SINIESTROS = pd.read_csv("data/Siniestros_urbanos_biobio_2024.csv")
-    COMUNAS_OBJETIVO = ["CONCEPCION", "SAN PEDRO DE LA PAZ"]
-    DF_SINIESTROS = DF_SINIESTROS[DF_SINIESTROS['Comuna'].isin(COMUNAS_OBJETIVO)]
-    DF_SINIESTROS['calle_simple'] = DF_SINIESTROS['Calle_Uno'].str.upper().str.strip().fillna("SIN NOMBRE")
-    DF_VIAL['calle_simple'] = DF_VIAL['nombre'].str.upper().str.strip().fillna("SIN NOMBRE")
-    print("api.main: Red vial y Siniestros Reales cargados.")
+    DF_VIAL_FULL = pd.read_csv("data/Red_Vial_de_Chile.csv")
+    DF_SINIESTROS_FULL = pd.read_csv("data/Siniestros_urbanos_biobio_2024.csv")
+    
+    # Limpieza general
+    DF_SINIESTROS_FULL['calle_simple'] = DF_SINIESTROS_FULL['Calle_Uno'].str.upper().str.strip().fillna("SIN NOMBRE")
+    DF_VIAL_FULL['calle_simple'] = DF_VIAL_FULL['nombre'].str.upper().str.strip().fillna("SIN NOMBRE")
+    
+    # Extraer lista de comunas únicas de la Región del Biobío
+    COMUNAS_DISPONIBLES = sorted(list(DF_SINIESTROS_FULL['Comuna'].unique()))
+    
+    print(f"api.main: Red vial y {len(DF_SINIESTROS_FULL)} Siniestros Reales cargados.")
+    print(f"api.main: Comunas disponibles: {COMUNAS_DISPONIBLES}")
+
 except FileNotFoundError as e:
     print(f"Error Crítico: No se pudo cargar un archivo de datos: {e}")
     sys.exit(1)
 
 # --- Inicialización de FastAPI ---
 app = FastAPI(
-    title="Optimizador de Rutas (Concepción) - Duoc UC",
+    title="Optimizador de Rutas (Biobío) - Duoc UC",
     description=f"API para el Desafío Hackathon 2025. {DISCLAIMER_TEXT}"
 )
 
 # --- Modelos de Datos Pydantic ---
 class AnalysisRequest(BaseModel):
-    ciudad: str = "Concepción"
+    comuna_seleccionada: str # Ahora la comuna es un parámetro
     timestamp: str = "2025-11-06T18:00:00"
 
 class CoachRequest(BaseModel):
     query: str
-    contexto_ciudad: dict = {} # El RAG usará el contexto del análisis
+    contexto_ciudad: dict = {}
+    comuna_seleccionada: str # El RAG también necesita saber la comuna
 
 # --- Endpoints de la API ---
 
-@app.get("/streets")
-def get_streets_list():
-    """Devuelve una lista de todas las calles únicas."""
-    calles = sorted(list(DF_VIAL['calle_simple'].unique()))
-    return {"streets": [c for c in calles if c != "SIN NOMBRE"]}
+@app.get("/comunas")
+def get_comunas_list():
+    """
+    NUEVO ENDPOINT: Devuelve la lista de comunas disponibles
+    en el CSV de siniestros.
+    """
+    return {"comunas": COMUNAS_DISPONIBLES}
 
 
 @app.post("/predict")
 def get_city_analysis(request: AnalysisRequest):
     """
-    Cumple las "Funcionalidades Requeridas" 1 y 2.
+    ENDPOINT /predict MODIFICADO
+    Ahora filtra dinámicamente por la comuna seleccionada.
     """
-    print("api.main: /predict - Iniciando Estimación de Riesgo.")
+    
+    comuna = request.comuna_seleccionada
+    print(f"api.main: /predict - Iniciando Análisis para: {comuna}")
+
+    # --- FILTRADO DINÁMICO ---
+    DF_SINIESTROS = DF_SINIESTROS_FULL[DF_SINIESTROS_FULL['Comuna'] == comuna].copy()
+    DF_VIAL = DF_VIAL_FULL[DF_VIAL_FULL['nombre_com'] == comuna].copy()
+    # --- FIN FILTRADO ---
+    
+    if DF_SINIESTROS.empty:
+        raise HTTPException(status_code=404, detail=f"No se encontraron datos de siniestros para la comuna: {comuna}")
+
+    # 1. ESTIMACIÓN DE RIESGO (Hotspots y Categorización)
     hotspots = DF_SINIESTROS['calle_simple'].value_counts()
     
     def categorize(count):
@@ -84,7 +107,7 @@ def get_city_analysis(request: AnalysisRequest):
     
     estimacion_riesgo = df_hotspots.head(10).to_dict('records')
 
-    print("api.main: /predict - Buscando Patrones (Explicabilidad).")
+    # 2. EXPLICABILIDAD (Patrones)
     patron_causas = DF_SINIESTROS['Causa_Acci'].value_counts().head(3).to_dict()
     patron_tipo = DF_SINIESTROS['Tipo_Accid'].value_counts().head(3).to_dict()
     df_merged = pd.merge(
@@ -101,7 +124,7 @@ def get_city_analysis(request: AnalysisRequest):
         "patron_tipo_via": patron_via
     }
     
-    score = DF_SINIESTROS.shape[0] / DF_VIAL.shape[0] 
+    score = DF_SINIESTROS.shape[0] / max(1, DF_VIAL.shape[0]) # Riesgo de la comuna
     drivers = list(hotspots.head(3).index) # Top 3 calles
     
     return {
@@ -116,18 +139,13 @@ def get_city_analysis(request: AnalysisRequest):
 def coach_rag_assistant(request: CoachRequest):
     """
     Cumple la "Funcionalidad Requerida" 3: Plan de Acción (RAG).
-    Ahora pasa el contexto y la consulta por separado.
+    Ahora pasa el contexto Y la comuna al RAG.
     """
-    
-    # --- ¡ESTE ES EL CAMBIO! ---
-    # Ya no "contaminamos" el query. Pasamos la consulta
-    # y el contexto por separado al RAG.
     response = get_rag_response(
         query=request.query, 
-        city_context=request.contexto_ciudad
+        city_context=request.contexto_ciudad,
+        comuna_seleccionada=request.comuna_seleccionada
     )
-    # --- FIN DEL CAMBIO ---
-
     return {"plan_textual": response}
 
 
