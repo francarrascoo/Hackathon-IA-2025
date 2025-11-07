@@ -76,7 +76,6 @@ def create_features_by_location(df):
     if df.empty:
         return pd.DataFrame()
 
-    # --- INICIO DE LA CORRECCIÓN V3 (MÁS ROBUSTA) ---
     df['tipo_accid'] = df['tipo_accid'].astype(str)
 
     agg_ops = {
@@ -87,7 +86,6 @@ def create_features_by_location(df):
             ('num_caida', lambda x: (x.str.contains('CAIDA', case=False, na=False)).sum()),
         ]
     }
-    # --- FIN DE LA CORRECCIÓN V3 ---
     
     location_df = df.groupby(['comuna', 'calle_uno']).agg(agg_ops)
     
@@ -106,7 +104,12 @@ def create_features_by_location(df):
     location_df['perc_atropello'] = location_df['num_atropello'] / total_valid_accidents
     location_df['perc_caida'] = location_df['num_caida'] / total_valid_accidents
     
-    bins = [-1, 5, 15, float('inf')]
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Umbrales anteriores: [-1, 5, 15, float('inf')] (Alto > 15, Medio 6-15)
+    # Umbrales nuevos: Hacemos el modelo más sensible
+    bins = [-1, 2, 8, float('inf')] # Alto > 8, Medio 3-8, Bajo 0-2
+    # --- FIN DE LA CORRECCIÓN ---
+
     labels = ['Bajo', 'Medio', 'Alto']
     location_df['risk_label'] = pd.cut(location_df['total_accidents'], bins=bins, labels=labels)
     

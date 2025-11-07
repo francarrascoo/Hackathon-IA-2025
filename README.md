@@ -10,6 +10,12 @@ Este repositorio contiene una aplicación de demostración para un Dashboard de 
 
 ---
 
+---
+title: Optimizador de Rutas (Smart Cities)
+sdk: docker
+app_port: 8501
+---
+
 ## 1) Crear y activar un entorno virtual
 
 macOS / Linux (zsh/bash):

@@ -259,25 +259,24 @@ async def get_coach_recommendation(request: CoachRequest, r: Request):
     generado por el sistema RAG (LLM + KB Local).
     """
     
-    # --- CORRECCIÓN AQUÍ ---
-    # Cambiamos 'r.state' por 'r.app.state'
     if r.app.state.rag_retriever is None:
         raise HTTPException(status_code=503, detail="Servicio RAG no inicializado.")
     
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Añadimos una validación para rechazar listas vacías.
     if not request.calles_peligrosas:
+        print("Rechazando solicitud a /coach: la lista de calles peligrosas está vacía.")
         raise HTTPException(status_code=400, detail="No se proporcionaron calles peligrosas para el análisis.")
+    # --- FIN DE LA CORRECCIÓN ---
 
     print(f"Iniciando RAG para comuna: {request.comuna}")
     
-    # --- LLAMADA CORREGIDA ---
-    # Pasamos las variables desde 'r.app.state'
     rag_result = get_rag_recommendation(
         comuna=request.comuna,
         calles_peligrosas=request.calles_peligrosas,
         rag_retriever=r.app.state.rag_retriever,
         rag_corpus=r.app.state.rag_corpus
     )
-    # --- FIN DE LA CORRECCIÓN ---
     
     if "error" in rag_result:
         raise HTTPException(status_code=500, detail=rag_result["error"])
