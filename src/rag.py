@@ -1,207 +1,160 @@
-<<<<<<< Updated upstream
-=======
 # src/rag.py
 import os
-import pandas as pd
-from rank_bm25 import BM25Okapi
-from src.prompts import COACH_PROMPT_TEMPLATE
-from src.load import VIAL_FILE # Solo para mapeo FID->Nombre
-import re
 from openai import OpenAI
+from rank_bm25 import BM25Okapi
+from src.prompts import COACH_PROMPT_TEMPLATE # Importamos el prompt que ya creamos
+from dotenv import load_dotenv
 
-# --- INICIALIZAR CLIENTE OPENAI ---
+# --- INICIO: Lógica de conexión de tu ejemplo ---
+
+# 1. Configuración de GitHub Models (como en tu ejemplo)
+GITHUB_ENDPOINT = "https://models.github.ai/inference"
+# (Asegúrate que este es el modelo correcto para ese endpoint)
+GITHUB_MODEL_NAME = "openai/gpt-4o" 
+
+# 2. Cargar el .env (para GITHUB_TOKEN)
+load_dotenv() 
+
 try:
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-    if os.environ.get("OPENAI_API_KEY") is None:
-        print("src.rag: ADVERTENCIA: La variable de entorno 'OPENAI_API_KEY' no está configurada.")
+    # 3. Leer el token
+    GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+    
+    if GITHUB_TOKEN:
+        print(f"src.rag: Cliente inicializado para GitHub Models ({GITHUB_MODEL_NAME}).")
+        
+        # 4. Inicializar el cliente (como en tu ejemplo)
+        client = OpenAI(
+            base_url=GITHUB_ENDPOINT,
+            api_key=GITHUB_TOKEN, # Usamos el TOKEN como API Key
+        )
+        MODEL_TO_USE = GITHUB_MODEL_NAME
+    else:
+        print("src.rag: ADVERTENCIA CRÍTICA: GITHUB_TOKEN no está en .env.")
         client = None
+        MODEL_TO_USE = GITHUB_MODEL_NAME
+
 except Exception as e:
-    print(f"src.rag: Error al inicializar el cliente de OpenAI: {e}")
+    print(f"src.rag: Error al inicializar el cliente de IA: {e}")
     client = None
+    MODEL_TO_USE = GITHUB_MODEL_NAME
+# --- FIN: Lógica de conexión ---
 
-# --- TOKENIZADOR (para limpieza de texto) ---
-def simple_tokenizer(text):
-    text = str(text).lower()
-    text = re.sub(r'[^\w\s]', '', text)
-    return set(text.split())
 
-# --- CARGA DE DATOS PARA EL RAG ---
+# --- INICIO: Lógica RAG (la que ya teníamos) ---
 
-# 1. Cargar la Base de Conocimiento (KB) de archivos .md
-def load_kb_docs(kb_path="kb/"):
-    print("src.rag: Cargando Base de Conocimiento (KB) desde /kb/...")
-    docs = {}
-    doc_names = []
-    if not os.path.exists(kb_path): return {}, None, []
+def load_knowledge_base(kb_path="kb"):
+    """
+    Carga todos los archivos .md de la carpeta /kb y los divide en 
+    fragmentos (chunks), usando párrafos como separadores.
+    """
+    corpus = []
+    file_sources = {}
+    
+    print(f"[RAG] Cargando Base de Conocimiento (KB) desde: {kb_path}")
+    if not os.path.exists(kb_path):
+        print(f"[RAG] Advertencia: Directorio KB '{kb_path}' no encontrado.")
+        return [], {}
+
     for filename in os.listdir(kb_path):
         if filename.endswith(".md"):
-            with open(os.path.join(kb_path, filename), 'r', encoding='utf-8') as f:
-                docs[filename] = f.read()
-                doc_names.append(filename)
-    if not docs: return {}, None, []
-    corpus = [list(simple_tokenizer(doc)) for doc in docs.values()]
-    bm25 = BM25Okapi(corpus)
-    print(f"src.rag: {len(docs)} documentos .md cargados y BM25 indexado.")
-    return docs, bm25, doc_names
+            filepath = os.path.join(kb_path, filename)
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    chunks = content.split('\n\n')
+                    
+                    for i, chunk in enumerate(chunks):
+                        chunk = chunk.strip()
+                        if chunk:
+                            chunk_id = f"{filename}_chunk_{i}"
+                            corpus.append(chunk)
+                            file_sources[chunk_id] = f"[Fuente: {filename}]"
+            except Exception as e:
+                print(f"[RAG] Error leyendo {filepath}: {e}")
+                
+    print(f"[RAG] KB cargada. {len(corpus)} fragmentos (chunks) indexados.")
+    return corpus, file_sources
 
-KB_DOCS, KB_BM25, DOC_NAMES = load_kb_docs()
-
-# 2. Cargar la Base de Conocimiento (KB) de Siniestros Reales
-def load_kb_siniestros():
-    print("src.rag (V15): Cargando KB de Siniestros Reales (2021-2024)...")
-    
-    # Copia de la lógica de homologación de src/targets.py
-    COLUMN_MAP = {
-        'Fecha': ('Fecha', 'Fecha', 'Fecha', 'Fecha'),
-        'Comuna': ('Comuna_1', 'Comuna', 'Comuna', 'Comuna'),
-        'Calle_Uno': ('Calle_Un_1', 'Calle_Uno', 'Calle_Uno', 'Calle_Uno'),
-        'Tipo_Accid': ('Tipo_Accid', 'Tipo_Accid', 'Tipo_Accid', 'Tipo_Accid'),
-        'Causa_Acci': ('Causa', 'Causa', 'Causa', 'Causa_Acci') 
-    }
-    FILES_SINIESTROS = {
-        2021: "data/Siniestros_2021.csv",
-        2022: "data/Siniestros_2022.csv",
-        2023: "data/Siniestros_2023.csv",
-        2024: "data/Siniestros_2024.csv"
-    }
-
-    all_siniestros_dfs = []
-    for year, file_path in FILES_SINIESTROS.items():
-        try:
-            df = pd.read_csv(file_path, low_memory=False, encoding='latin1')
-            df_homologado = pd.DataFrame()
-            map_index = year - 2021
-            for standard_col, source_cols in COLUMN_MAP.items():
-                col_name_to_try = source_cols[map_index]
-                if col_name_to_try in df.columns:
-                    df_homologado[standard_col] = df[col_name_to_try]
-            all_siniestros_dfs.append(df_homologado.dropna(subset=['Comuna', 'Calle_Uno']))
-        except FileNotFoundError:
-            print(f"src.rag: ADVERTENCIA: No se encontró {file_path}")
-    
-    if not all_siniestros_dfs:
-        print("src.rag: No se cargó ningún archivo de siniestros.")
-        return pd.DataFrame(columns=['Comuna', 'calle_simple', 'Tipo_Accid', 'Causa_Acci']), {}
-
-    df_siniestros_full = pd.concat(all_siniestros_dfs, ignore_index=True)
-    df_siniestros_full['Comuna'] = df_siniestros_full['Comuna'].str.upper().str.strip()
-    df_siniestros_full['calle_simple'] = df_siniestros_full['Calle_Uno'].str.upper().str.strip()
-    df_siniestros_full = df_siniestros_full.dropna(subset=['calle_simple', 'Comuna'])
-    
-    siniestros_index = df_siniestros_full.set_index(['Comuna', 'calle_simple'])
-    calles_conocidas = {calle: simple_tokenizer(calle) for calle in df_siniestros_full['calle_simple'].unique()}
-    
-    print(f"src.rag: KB de siniestros (2021-2024) cargado. {len(calles_conocidas)} calles únicas indexadas.")
-    return siniestros_index, calles_conocidas
-
-KB_SINIESTROS_INDEX, CALLES_CONOCIDAS_TOKENS = load_kb_siniestros()
-
-# --- FIN DE LA CARGA DE DATOS ---
-
-def find_best_street_match_in_query(query_text, calles_conocidas_tokens):
-    """Encuentra la MEJOR calle que coincida con la consulta."""
-    if not calles_conocidas_tokens: return None
-    query_tokens = simple_tokenizer(query_text)
-    if not query_tokens: return None
-    best_match = None
-    best_score = 0
-    for calle_nombre, calle_tokens in calles_conocidas_tokens.items():
-        score = len(query_tokens.intersection(calle_tokens))
-        if score > best_score:
-            best_score = score
-            best_match = calle_nombre
-    if best_score > 0:
-        print(f"src.rag: Mejor coincidencia específica encontrada: '{best_match}' (Score: {best_score})")
-        return best_match
-    return None
-
-def get_rag_response(query, city_context, comuna_seleccionada):
+def initialize_retriever(corpus):
     """
-    Proceso RAG V15: Lógica de priorización CON FILTRO DE COMUNA.
+    Inicializa el motor de búsqueda BM25 con el corpus.
     """
-    context = ""
-    sources = []
-    
-    # --- 1. Retrieve (Recuperar) ---
-    
-    # PRIMERO: Filtrar la base de siniestros POR LA COMUNA SELECCIONADA
-    try:
-        KB_SINIESTROS_COMUNA = KB_SINIESTROS_INDEX.loc[comuna_seleccionada.upper()]
-    except KeyError:
-        print(f"src.rag: No hay siniestros en el índice para la comuna {comuna_seleccionada}")
-        KB_SINIESTROS_COMUNA = pd.DataFrame(columns=['Tipo_Accid', 'Causa_Acci'])
-    except Exception as e:
-        print(f"src.rag: Error al filtrar KB por comuna: {e}")
-        KB_SINIESTROS_COMUNA = pd.DataFrame(columns=['Tipo_Accid', 'Causa_Acci'])
-
-    # SEGUNDO: Buscar si la consulta es sobre una calle específica
-    calle_especifica = find_best_street_match_in_query(query, CALLES_CONOCIDAS_TOKENS)
-    
-    # --- CASO 1: La consulta es específica (ej. "Paicaví") ---
-    if calle_especifica and not KB_SINIESTROS_COMUNA.empty and calle_especifica in KB_SINIESTROS_COMUNA.index:
-        print(f"src.rag: Lógica RAG -> CASO 1 (Específico). Buscando: '{calle_especifica}' EN '{comuna_seleccionada}'")
-        siniestros_especificos = KB_SINIESTROS_COMUNA.loc[[calle_especifica]]
+    if not corpus:
+        print("[RAG] No hay corpus para inicializar el retriever.")
+        return None
         
-        context += f"[Contexto de Siniestros Reales (CSV) para '{calle_especifica}' en {comuna_seleccionada}]:\n"
-        context += f"Se encontraron {len(siniestros_especificos)} accidentes reales (2021-2024) en '{calle_especifica}'.\n"
-        if not siniestros_especificos.empty:
-            causas = siniestros_especificos['Causa_Acci'].value_counts().index[0]
-            tipos = siniestros_especificos['Tipo_Accid'].value_counts().index[0]
-            context += f"El tipo de accidente más común es '{tipos}'.\n"
-            context += f"La causa más común es '{causas}'.\n"
-        sources.append("Siniestros (2021-2024)")
-    
-    # --- CASO 2: La consulta es genérica (ej. "¿Qué plan sugieres?") ---
-    else:
-        print(f"src.rag: Lógica RAG -> CASO 2 (Genérico). Usando contexto de {comuna_seleccionada}.")
-        hotspots = city_context.get('drivers', [])
-        if hotspots:
-            context += f"El análisis de la comuna '{comuna_seleccionada}' (datos 2024) identificó estos puntos críticos (hotspots): {', '.join(hotspots)}."
-            
-            hotspot_calle = hotspots[0]
-            if not KB_SINIESTROS_COMUNA.empty and hotspot_calle in KB_SINIESTROS_COMUNA.index:
-                siniestros_hotspot = KB_SINIESTROS_COMUNA.loc[[hotspot_calle]]
-                causa_hotspot = siniestros_hotspot['Causa_Acci'].value_counts().index[0]
-                context += f" La causa principal de accidentes en '{hotspot_calle}' (datos históricos) es: '{causa_hotspot}'."
-                sources.append("Siniestros (2021-2024)")
-        else:
-            context += f"No se recibió un contexto de hotspots para {comuna_seleccionada}. Responda de forma general."
-            
-    # B. Recuperar de KB (BM25)
-    tokenized_query = list(simple_tokenizer(query))
-    if KB_BM25 and tokenized_query:
-        scores = KB_BM25.get_scores(tokenized_query)
-        top_n_idx = scores.argmax()
-        if scores[top_n_idx] > 0:
-            doc_name = DOC_NAMES[top_n_idx]
-            context += f"\n[Contexto de {doc_name}]:\n{KB_DOCS[doc_name]}\n"
-            sources.append(doc_name)
+    tokenized_corpus = [doc.split(" ") for doc in corpus]
+    retriever = BM25Okapi(tokenized_corpus)
+    print("[RAG] Retriever BM25 inicializado.")
+    return retriever
 
-    if not context:
-        context = "No se encontró contexto específico en la Base de Conocimiento para esta ruta o consulta."
+def search_kb(query, retriever, corpus, n_results=3):
+    """
+    Busca en el corpus usando el retriever BM25.
+    """
+    if retriever is None:
+        print("[RAG] Retriever no inicializado. Devolviendo contexto vacío.")
+        return "No hay información en la base de conocimiento."
+        
+    tokenized_query = query.split(" ")
+    top_docs = retriever.get_top_n(tokenized_query, corpus, n=n_results)
+    context = "\n\n---\n\n".join(top_docs)
+    return context
 
-    # --- 2. Augment (A) ---
-    prompt = COACH_PROMPT_TEMPLATE.format(context=context, query=query, comuna_seleccionada=comuna_seleccionada)
-    
-    # --- 3. Generate (G) ---
-    print(f"--- RAG PROMPT V15 (PARA OPENAI) ---\n{prompt}\n---------------------------")
+# --- FIN: Lógica RAG ---
+
+# --- FUNCIÓN PRINCIPAL (Modificada) ---
+# (Nota: ahora es más simple, no necesita recibir 'base_url', 'api_key', 'model_name')
+def get_rag_recommendation(comuna, calles_peligrosas, rag_retriever, rag_corpus):
+    """
+    Función principal que orquesta el RAG.
+    Usa el cliente 'client' de GitHub Models inicializado globalmente.
+    """
     
     if client is None:
-        return "Error: El Asistente RAG no está configurado. (Falta OPENAI_API_KEY)"
+        return {"error": "Error: El Asistente RAG no está configurado (Falta GITHUB_TOKEN)."}
 
     try:
+        # 1. Formular la consulta de búsqueda para el RAG
+        calles_str = ", ".join([c['Calle'] for c in calles_peligrosas[:2]])
+        search_query = f"soluciones viales para accidentes en {calles_str} en {comuna} costos construcción impacto"
+
+        # 2. Retrieval (Buscar en la KB)
+        print(f"[RAG] Buscando contexto con query: '{search_query}'")
+        contexto = search_kb(search_query, rag_retriever, rag_corpus, n_results=3)
+
+        # 3. Augmented (Formatear el prompt)
+        calles_peligrosas_str = "\n".join([
+            f"- {c['Calle']} (Riesgo: {c['riesgo']}, Total Accidentes: {c['total_accidents']})" 
+            for c in calles_peligrosas
+        ])
+        
+        # Usamos el PROMPT_TEMPLATE que ya teníamos
+        prompt_final = COACH_PROMPT_TEMPLATE.format(
+            comuna=comuna,
+            calles_peligrosas=calles_peligrosas_str,
+            contexto=contexto
+        )
+
+        # 4. Generation (Llamar al LLM)
+        print(f"[RAG] Llamando a {GITHUB_ENDPOINT} con modelo {MODEL_TO_USE}...")
+        
         completion = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=MODEL_TO_USE, 
             messages=[
-                {"role": "system", "content": f"Eres un asistente experto en seguridad vial. Tu misión es generar un plan de acción para la comuna de {comuna_seleccionada}. Basa tu respuesta *únicamente* en el contexto proporcionado. Cita tus fuentes (ej. [fuente: Siniestros (2021-2024)])."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": f"Eres un asistente experto en seguridad vial para {comuna}. Basa tu respuesta *únicamente* en el contexto proporcionado. Cita tus fuentes."},
+                {"role": "user", "content": prompt_final}
             ],
             temperature=0.2
         )
-        response = completion.choices[0].message.content
-        return response
+        
+        plan_de_accion = completion.choices[0].message.content
+        
+        return {
+            "plan_de_accion": plan_de_accion,
+            "fuentes_consultadas": contexto
+        }
 
     except Exception as e:
-        print(f"src.rag: Error en la llamada a OpenAI: {e}")
-        return f"Error al contactar al LLM: {e}"
->>>>>>> Stashed changes
+        print(f"[RAG] Error al contactar el servicio de LLM: {e}")
+        return {"error": f"Error al conectar con el servicio de IA: {e}"}

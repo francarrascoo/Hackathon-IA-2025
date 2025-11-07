@@ -140,29 +140,60 @@ Streamlit abrirá la interfaz en `http://localhost:8501` (o te indicará la URL 
 
 ---
 
-## Problemas conocidos y soluciones
+## Instalación rápida con `requirements.txt` (pip)
 
-- Error al importar módulos después de activar venv: asegúrate de activar correctamente el entorno virtual antes de ejecutar comandos.
-- Error de LightGBM relacionado con `libomp.dylib`: instala `libomp` con Homebrew y reinstala `lightgbm` (ver sección 2).
-- Puertos ocupados (p.ej. 8000): mata procesos que usen el puerto antes de arrancar:
+Si prefieres instalar con `pip`, ya existe un `requirements.txt` en la raíz. Desde la raíz del repositorio:
 
 ```bash
-lsof -ti:8000 | xargs kill -9
+python3 -m pip install --upgrade pip setuptools wheel
+python3 -m pip install -r requirements.txt
 ```
 
-- Si la llamada al RAG falla indicando que falta la clave de OpenAI, revisa que `OPENAI_API_KEY` esté correctamente presente en el entorno donde se ejecuta la API.
+Si la instalación de `lightgbm` falla en macOS, revisa la sección `Notas macOS` en este README o usa la instalación conda más abajo.
 
----
+## Instalación recomendada (conda / conda-forge)
 
-## Comprobación rápida (checklist)
+Para evitar problemas de compilación en macOS, la forma más fiable es usar `conda` (miniconda/Anaconda) y `conda-forge`:
 
-- [ ] Crear/activar `venv`
-- [ ] pip install -r requirements.txt
-- [ ] Ejecutar `python -m src.model` (genera `artifacts/biobio_risk_model_v15.joblib`)
-- [ ] Crear `.env` con `OPENAI_API_KEY`
-- [ ] Iniciar API: `python3 api/main.py`
-- [ ] Iniciar Streamlit: `streamlit run app/app.py`
+```bash
+# Crear y activar el entorno desde environment.yml (si lo has creado)
+conda env create -f environment.yml
+conda activate hackathon-ia-2025
+```
 
----
+O bien, si ya tienes un entorno conda activo:
 
-Si prefieres, puedo añadir instrucciones adicionales (por ejemplo, cómo ejecutar en modo desarrollo con `uvicorn --reload`, o cómo generar un archivo `.env.example` sin exponer la clave). ¿Quieres que agregue eso también?
+```bash
+conda install -c conda-forge lightgbm
+python -m pip install -r requirements.txt
+```
+
+## Comprobaciones rápidas
+
+- Verificar comunas disponibles:
+
+```bash
+curl http://127.0.0.1:8000/comunas | jq
+```
+
+- Llamada a `/predict` (todos los años):
+
+```bash
+curl -s -X POST "http://127.0.0.1:8000/predict" \
+	-H "Content-Type: application/json" \
+	-d '{"comuna_seleccionada":"CONCEPCION"}' | jq
+```
+
+- Llamada a `/predict` (filtrando por año):
+
+```bash
+curl -s -X POST "http://127.0.0.1:8000/predict" \
+	-H "Content-Type: application/json" \
+	-d '{"comuna_seleccionada":"CONCEPCION","year":2022}' | jq
+```
+
+## Notas finales
+
+- El endpoint `/predict` ahora acepta un parámetro opcional `year` en la petición JSON; si no se envía, el API usa todos los años (2021-2024). Esto evita resultados inesperados si el frontend envía un `timestamp` por defecto.
+- Para que `/coach` (RAG) funcione, instala `rank_bm25` y `openai` y configura `OPENAI_API_KEY`.
+
