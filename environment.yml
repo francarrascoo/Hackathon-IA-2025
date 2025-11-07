@@ -1,0 +1,20 @@
+name: hackathon-ia-2025
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pandas
+  - numpy
+  - scikit-learn=1.7.2
+  - joblib
+  - networkx
+  - lightgbm
+  - pip:
+    - fastapi>=0.85
+    - "uvicorn[standard]>=0.21"
+    - rank_bm25>=0.2.2
+    - openai>=0.27.0
+    - python-dotenv>=1.0.0
+    - requests>=2.31.0
+    - jq

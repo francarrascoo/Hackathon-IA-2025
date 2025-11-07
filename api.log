@@ -1,0 +1,10 @@
+src.rag: Cargando Base de Conocimiento (KB) desde /kb/...
+src.rag (V15): Cargando KB de Siniestros Reales (2021-2024)...
+src.rag: ADVERTENCIA: No se encontró data/Siniestros_2021.csv
+src.rag: ADVERTENCIA: No se encontró data/Siniestros_2022.csv
+src.rag: ADVERTENCIA: No se encontró data/Siniestros_2023.csv
+src.rag: ADVERTENCIA: No se encontró data/Siniestros_2024.csv
+src.rag: No se cargó ningún archivo de siniestros.
+api.main (V15): Iniciando API de Dashboard de Riesgo (Dinámico por Comuna)...
+api.main: Modelo de ML (V15) cargado.
+Error Crítico: No se pudo cargar un archivo de datos: [Errno 2] No such file or directory: 'data/biobio_vial_procesado.csv'

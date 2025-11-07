@@ -1,0 +1,18 @@
+# Minimal requirements for Hackathon-IA-2025
+# Install with: pip install -r requirements.txt
+
+fastapi>=0.85
+uvicorn[standard]>=0.21
+pandas>=1.5
+numpy>=1.24
+scikit-learn==1.7.2
+joblib>=1.2
+networkx>=3.0
+lightgbm>=4.0
+rank_bm25>=0.2.2
+openai>=0.27.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+openai
+rank_bm25
+python-dotenv
