@@ -1,3 +1,148 @@
+# Optimizador de Rutas Terrestres — Hackathon IA Duoc UC 2025
+
+Este repositorio contiene una API (FastAPI) y una aplicación web (Streamlit) para identificar puntos viales con mayor riesgo de siniestros y generar un plan de acción asistido por IA (RAG) usando una base de conocimiento local.
+
+## Estructura principal
+- `api/` — FastAPI (endpoints: `/`, `/comunas`, `/predict`, `/coach`).
+- `app/` — Interfaz de usuario en Streamlit (`app/app.py`).
+- `src/` — Código fuente (procesamiento, RAG, entrenamiento, etc.).
+- `artifacts/` — Modelos y objetos serializados (`street_risk_model.joblib`, `label_encoder.joblib`, `model_columns.joblib`).
+- `data/` — CSVs usados como datos de entrada (siniestros, índices, etc.).
+- `kb/` — Base de conocimiento en Markdown para el motor RAG.
+
+---
+
+## Requisitos
+- macOS / Linux / Windows (con herramientas equivalentes)
+- Python 3.12 (recomendado — hay un `environment.yml`) o al menos Python >= 3.10
+- Git (opcional)
+- (Opcional) Docker
+
+Recomendado: usar Conda con `environment.yml`. Alternativa: virtualenv + `requirements.txt`.
+
+## 1) Preparar el entorno (Conda)
+
+```bash
+conda env create -f environment.yml
+conda activate hackathon-ia-2025
+```
+
+### Alternativa (venv + pip)
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate   # zsh / bash
+pip install -r requirements.txt
+```
+
+## 2) Verificar artefactos y datos
+
+Asegúrate de que `artifacts/` contiene los modelos necesarios:
+
+- `artifacts/street_risk_model.joblib`
+- `artifacts/label_encoder.joblib`
+- `artifacts/model_columns.joblib`
+
+Y que `data/` y `kb/` contienen los CSV y archivos `.md` necesarios. Si faltan archivos, la API mostrará advertencias durante el arranque.
+
+## 3) Variables de entorno (.env)
+
+La funcionalidad RAG (endpoint `/coach`) usa un cliente hacia GitHub Models y requiere un token. Crea un archivo `.env` en la raíz con al menos:
+
+```env
+GITHUB_TOKEN=tu_github_token_para_models
+```
+
+Notas:
+- `src/rag.py` inicializa un cliente con `GITHUB_TOKEN` apuntando a `https://models.github.ai/inference`.
+- Si no configuras `GITHUB_TOKEN`, la API arrancará pero `/coach` devolverá un error indicando que falta configuración.
+
+## 4) Ejecutar localmente
+
+Hay dos procesos: la API (FastAPI/uvicorn) y la app (Streamlit). Puedes lanzarlos por separado o usar el script `startup.sh`.
+
+Opción A — Usar `startup.sh` (inicia API en background y Streamlit en foreground):
+
+```bash
+chmod +x startup.sh
+./startup.sh
+```
+
+Opción B — Ejecutar manualmente (útil en desarrollo):
+
+```bash
+# En un terminal: Ejecutar la API
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+
+# En otro terminal: Ejecutar la UI Streamlit
+streamlit run app/app.py --server.port 8501 --server.address 0.0.0.0
+```
+
+La API estará en `http://127.0.0.1:8000` y la app en `http://127.0.0.1:8501`.
+
+## 5) Endpoints útiles (pruebas rápidas)
+
+- GET `/` — Ruta raíz (saludo).
+- GET `/comunas` — Lista de comunas cargadas.
+- POST `/predict` — Predicción de puntos peligrosos para una comuna.
+
+Ejemplo `/predict`:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"comuna": "CONCEPCION"}' | jq
+```
+
+Ejemplo `/coach` (RAG):
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/coach \
+  -H "Content-Type: application/json" \
+  -d '{"comuna": "CONCEPCION", "calles_peligrosas": [{"Calle":"Calle A","riesgo":"Alto","total_accidents":10}] }' | jq
+```
+
+## 6) Troubleshooting (problemas comunes)
+
+- Puerto ocupado (API 8000):
+
+```bash
+lsof -nP -iTCP:8000 -sTCP:LISTEN || echo "NO_LISTENER"
+# Si hay un PID en escucha, matarlo (ejemplo):
+# kill -9 <PID>
+```
+
+- Errores de carga de artefactos: verifica que los archivos en `artifacts/` existen y tienen permisos de lectura.
+- `/comunas` vacío: confirma que `data/` contiene los CSV `Siniestros_*.csv` y revisa los logs de arranque (uvicorn) para errores de carga.
+- `/coach` falla: revisa `GITHUB_TOKEN` en `.env` y que `kb/` contenga archivos `.md`.
+
+## 7) Docker (opcional)
+
+```bash
+# Construir imagen
+docker build -t hackathon-ia-2025 .
+
+# Ejecutar con variables de entorno desde .env
+docker run -p 8000:8000 -p 8501:8501 --env-file .env hackathon-ia-2025
+```
+
+## 8) Archivos importantes
+
+- `api/main.py` — Lógica de arranque, carga de modelos, endpoints.
+- `app/app.py` — Interfaz Streamlit.
+- `src/rag.py` — Lógica RAG y uso de `GITHUB_TOKEN`.
+- `artifacts/` — Modelos que la API carga en startup.
+
+## 9) Siguientes pasos sugeridos
+
+- Añadir tests automáticos para `src/` (unit + integration) y un `Makefile` o `nox`/`tox` para automatizar ejecución.
+- Añadir GitHub Action para build y tests.
+
+Si quieres, actualizo el README con instrucciones Docker más detalladas o creo scripts (`Makefile`) para simplificar los comandos de desarrollo.
+
+---
+
+_Generado: README actualizado para contener todo lo necesario para ejecutar la aplicación localmente._
 # Hackathon-IA-2025
 
 Este repositorio contiene una aplicación de demostración para un Dashboard de Riesgo Vial (Región del Biobío) con API (FastAPI) y frontend (Streamlit). A continuación se describen los pasos para instalar dependencias y ejecutar la aplicación en macOS y Windows —replicando exactamente el flujo que usamos en esta sesión—.
